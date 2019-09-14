@@ -17,7 +17,7 @@ class ULangevinMethods {
         ULangevinMethods(double, double, double, int );
         double grad_potential(double);
         double ode_vect_field(double, double, double, double, double);
-        pair<double, double> linear_ode_step(pair<double, double>, double, bool);
+        pair<double, double> linear_ode_step(pair<double, double>, double, int);
         pair<double, double> zigzag_ode_step(pair<double, double>, double, double, double);
 
     private:
@@ -47,29 +47,17 @@ class ULangevinMethods {
         double step_size;
 
         // Precomputed values that depend on step_size
-        double small_step_size;
-        double small_step_size_a21;
-        double small_step_size_a31;
-        double small_step_size_a32;
-        double small_step_size_c2;
-        double small_step_size_c3;
-        double exp_minus_small;
-        double exp_minus_small_c2;
-        double exp_small_c2;
-        double exp_minus_small_c3;
-        double exp_small_c3;
-
-        double big_step_size;
-        double big_step_size_a21;
-        double big_step_size_a31;
-        double big_step_size_a32;
-        double big_step_size_c2;
-        double big_step_size_c3;
-        double exp_minus_big;
-        double exp_minus_big_c2;
-        double exp_big_c2;
-        double exp_minus_big_c3;
-        double exp_big_c3;
+        double step_sizes[2];
+        double step_sizes_a21[2];
+        double step_sizes_a31[2];
+        double step_sizes_a32[2];
+        double step_sizes_c2[2];
+        double step_sizes_c3[2];
+        double exp_minus_step_sizes[2];
+        double exp_minus_step_sizes_c2[2];
+        double exp_step_sizes_c2[2];
+        double exp_minus_step_sizes_c3[2];
+        double exp_step_sizes_c3[2];
 };
 
 // Constructor will compute the above private variables
@@ -87,29 +75,21 @@ ULangevinMethods::ULangevinMethods(double input_nu, double input_beta,
     step_size =  input_T/(double)input_no_of_steps;
 
     // The "change of variable" parameters
-    small_step_size = a*step_size;
-    small_step_size_a21 = small_step_size*a21;
-    small_step_size_a31 = small_step_size*a31;
-    small_step_size_a32 = small_step_size*a32;
-    small_step_size_c2 = small_step_size*c2;
-    small_step_size_c3 = small_step_size*c3;
-    exp_minus_small = exp(-half_nu*small_step_size);
-    exp_minus_small_c2 = exp(-half_nu*small_step_size_c2);
-    exp_small_c2 = exp(half_nu*small_step_size_c2);
-    exp_minus_small_c3 = exp(-half_nu*small_step_size_c3);
-    exp_small_c3 = exp(half_nu*small_step_size_c3);
+    step_sizes[0] = a*step_size;
+    step_sizes[1] = one_minus_two_a*step_size;
 
-    big_step_size = one_minus_two_a*step_size;
-    big_step_size_a21 = big_step_size*a21;
-    big_step_size_a31 = big_step_size*a31;
-    big_step_size_a32 = big_step_size*a32;
-    big_step_size_c2 = big_step_size*c2;
-    big_step_size_c3 = big_step_size*c3;
-    exp_minus_big = exp(-half_nu*big_step_size);
-    exp_minus_big_c2 = exp(-half_nu*big_step_size_c2);
-    exp_big_c2 = exp(half_nu*big_step_size_c2);
-    exp_minus_big_c3 = exp(-half_nu*big_step_size_c3);
-    exp_big_c3 = exp(half_nu*big_step_size_c3);
+    for (int i=0; i<=1; ++i) {
+        step_sizes_a21[i] = step_sizes[i]*a21;
+        step_sizes_a31[i] = step_sizes[i]*a31;
+        step_sizes_a32[i] = step_sizes[i]*a32;
+        step_sizes_c2[i] = step_sizes[i]*c2;
+        step_sizes_c3[i] = step_sizes[i]*c3;
+        exp_minus_step_sizes[i] = exp(-half_nu*step_sizes[i]);
+        exp_minus_step_sizes_c2[i] = exp(-half_nu*step_sizes_c2[i]);
+        exp_step_sizes_c2[i] = exp(half_nu*step_sizes_c2[i]);
+        exp_minus_step_sizes_c3[i] = exp(-half_nu*step_sizes_c3[i]);
+        exp_step_sizes_c3[i] = exp(half_nu*step_sizes_c3[i]);
+    }
 }
 
 // Gradient of a double-well potential U(q) = (q^2 -1)^2
@@ -129,7 +109,7 @@ double ULangevinMethods::ode_vect_field(double y,
 // Method for propagating the numerical solution along a linear path
 pair<double, double> ULangevinMethods::linear_ode_step(pair<double, double> qp,
                                                        double path_increment,
-                                                       bool small_step){
+                                                       int step_size_index){
 
     // Use change of variables to get initial values for the ODE: y" = F(y)
     double y = qp.first;
@@ -137,52 +117,29 @@ pair<double, double> ULangevinMethods::linear_ode_step(pair<double, double> qp,
 
     // Apply a step of the third order symplectic RKN method
     // Note this is only performed for two sizes of interval
-    if (small_step){
-        double k1 = ode_vect_field(y, small_step_size, path_increment, 1.0, 1.0);
+    double k1 = ode_vect_field(y, step_sizes[step_size_index], path_increment, 1.0, 1.0);
 
-        double captial_y_2 = y + small_step_size_c2*y_prime + small_step_size_a21*k1;
+    double y_2 = y + step_sizes_c2[step_size_index]*y_prime \
+                   + step_sizes_a21[step_size_index]*k1;
 
-        double k2 = ode_vect_field(captial_y_2,
-                                   small_step_size, path_increment,
-                                   exp_minus_small_c2, exp_small_c2);
+    double k2 = ode_vect_field(y_2, step_sizes[step_size_index], path_increment,
+                               exp_minus_step_sizes_c2[step_size_index],
+                               exp_step_sizes_c2[step_size_index]);
 
-        double captial_y_3 = y + small_step_size_c3*y_prime \
-                               + small_step_size_a31*k1 + small_step_size_a32*k2;
+    double y_3 = y + step_sizes_c3[step_size_index]*y_prime \
+                   + step_sizes_a31[step_size_index]*k1 \
+                   + step_sizes_a32[step_size_index]*k2;
 
-        double k3 = ode_vect_field(captial_y_3,
-                                   small_step_size, path_increment,
-                                   exp_minus_small_c3, exp_small_c3);
+    double k3 = ode_vect_field(y_3, step_sizes[step_size_index], path_increment,
+                               exp_minus_step_sizes_c3[step_size_index],
+                               exp_step_sizes_c3[step_size_index]);
 
-        y = y + small_step_size*(y_prime + b1*k1 + b2*k2 + b3*k3);
-        y_prime = y_prime + d1*k1 + d2*k2 + d3*k3;
+    y = y + step_sizes[step_size_index]*(y_prime + b1*k1 + b2*k2 + b3*k3);
+    y_prime = y_prime + d1*k1 + d2*k2 + d3*k3;
 
-        // Use change of variables to get back (q, p)
-        y = exp_minus_small*y;
-        y_prime = exp_minus_small*y_prime - half_nu*y;
-    }
-    else
-    {
-        double k1 = ode_vect_field(y, big_step_size, path_increment, 1.0, 1.0);
-
-        double captial_y_2 = y + big_step_size_c2*y_prime + big_step_size_a21*k1;
-
-        double k2 = ode_vect_field(captial_y_2,
-                                   big_step_size, path_increment,
-                                   exp_minus_big_c2, exp_big_c2);
-
-        double captial_y_3 = y + big_step_size_c3*y_prime \
-                               + big_step_size_a31*k1 + big_step_size_a32*k2;
-
-        double k3 = ode_vect_field(captial_y_3, big_step_size, path_increment,
-                                   exp_minus_big_c3, exp_big_c3);
-
-        y = y + big_step_size*(y_prime + b1*k1 + b2*k2 + b3*k3);
-        y_prime = y_prime + d1*k1 + d2*k2 + d3*k3;
-
-        // Use change of variables to get back (q, p)
-        y = exp_minus_big*y;
-        y_prime = exp_minus_big*y_prime - half_nu*y;
-    }
+    // Use change of variables to get back (q, p)
+    y = exp_minus_step_sizes[step_size_index]*y;
+    y_prime = exp_minus_step_sizes[step_size_index]*y_prime - half_nu*y;
 
     return make_pair(y, y_prime);
 };
@@ -206,9 +163,9 @@ pair<double, double> ULangevinMethods::zigzag_ode_step(pair<double, double>  qp,
     pair<double, double> y = qp;
 
     // Propagate the numerical solution along the piecewise linear path
-    y = linear_ode_step(y, b, true);
-    y = linear_ode_step(y, c - b, false);
-    y = linear_ode_step(y, brownian_increment - c, true);
+    y = linear_ode_step(y, b, 0);
+    y = linear_ode_step(y, c - b, 1);
+    y = linear_ode_step(y, brownian_increment - c, 0);
 
     return y;
 };
