@@ -5,8 +5,8 @@
 using namespace std;
 
 // Numerical simulation of the underdamped Langevin diffusion on [0, T]:
-// dP_t = Q_t dt
-// dQ_t = -grad(U)(Q_t) dt - nu P_t dt + sqrt(2*nu / beta) dW_t
+// dQ_t = P_t dt
+// dP_t = -grad(U)(Q_t) dt - nu P_t dt + sqrt(2*nu / beta) dW_t
 
 class ULangevinMethods {
     public:

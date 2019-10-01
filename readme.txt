@@ -2,8 +2,8 @@ Numerical simulation of the underdamped Langevin diffusion
 
 This code estimates the discretization error of a new high order method for the underdamped Langevin equation:
 
-dP_t = Q_t dt,
-dQ_t = -grad(U)(Q_t) dt - nu P_t dt + sqrt(2*nu / beta) dW_t.
+dQ_t = P_t dt,
+dP_t = -grad(U)(Q_t) dt - nu P_t dt + sqrt(2*nu / beta) dW_t.
 
 
 The numerical method and example are outlined in the document langevin_presentation.pdf.
