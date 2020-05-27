@@ -18,7 +18,8 @@ class ULangevinMethods {
         double grad_potential(double);
         double ode_vect_field(double, double, double, double, double);
         pair<double, double> linear_ode_step(pair<double, double>, double, int);
-        pair<double, double> zigzag_ode_step(pair<double, double>, double, double, double);
+        pair<double, double> piecewise_ode_step(pair<double, double>, double, double, double);
+        pair<double, double> adjusted_ode_step(pair<double, double>, double, double, double);
 
     private:
         // High order piecewise linear path coefficients
@@ -45,19 +46,20 @@ class ULangevinMethods {
         // Precomputed values that depend on the input parameters
         double sigma, quarter_nu_squared, half_nu;
         double step_size;
+        double two_sigma_step_size;
 
         // Precomputed values that depend on step_size
-        double step_sizes[2];
-        double step_sizes_a21[2];
-        double step_sizes_a31[2];
-        double step_sizes_a32[2];
-        double step_sizes_c2[2];
-        double step_sizes_c3[2];
-        double exp_minus_step_sizes[2];
-        double exp_minus_step_sizes_c2[2];
-        double exp_step_sizes_c2[2];
-        double exp_minus_step_sizes_c3[2];
-        double exp_step_sizes_c3[2];
+        double step_sizes[3];
+        double step_sizes_a21[3];
+        double step_sizes_a31[3];
+        double step_sizes_a32[3];
+        double step_sizes_c2[3];
+        double step_sizes_c3[3];
+        double exp_minus_step_sizes[3];
+        double exp_minus_step_sizes_c2[3];
+        double exp_step_sizes_c2[3];
+        double exp_minus_step_sizes_c3[3];
+        double exp_step_sizes_c3[3];
 };
 
 // Constructor will compute the above private variables
@@ -73,12 +75,14 @@ ULangevinMethods::ULangevinMethods(double input_nu, double input_beta,
     half_nu = 0.5*input_nu;
 
     step_size =  input_T/(double)input_no_of_steps;
+    two_sigma_step_size = 2.0*sigma*step_size;
 
     // The "change of variable" parameters
     step_sizes[0] = a*step_size;
     step_sizes[1] = one_minus_two_a*step_size;
+    step_sizes[2] = step_size;
 
-    for (int i=0; i<=1; ++i) {
+    for (int i=0; i<=2; ++i) {
         step_sizes_a21[i] = step_sizes[i]*a21;
         step_sizes_a31[i] = step_sizes[i]*a31;
         step_sizes_a32[i] = step_sizes[i]*a32;
@@ -144,8 +148,8 @@ pair<double, double> ULangevinMethods::linear_ode_step(pair<double, double> qp,
     return make_pair(y, y_prime);
 };
 
-// Method for propagating the numerical solution along each part of \hat{W}
-pair<double, double> ULangevinMethods::zigzag_ode_step(pair<double, double>  qp,
+// Method for propagating the numerical solution via the piecewise linear-ODE method
+pair<double, double> ULangevinMethods::piecewise_ode_step(pair<double, double>  qp,
                                                        double brownian_increment,
                                                        double brownian_area,
                                                        double brownian_skew_area){
@@ -170,6 +174,26 @@ pair<double, double> ULangevinMethods::zigzag_ode_step(pair<double, double>  qp,
     return y;
 };
 
+// Method for propagating the numerical solution via the adjusted linear-ODE method
+pair<double, double> ULangevinMethods::adjusted_ode_step(pair<double, double>  qp,
+                                                       double brownian_increment,
+                                                       double brownian_area,
+                                                       double brownian_skew_area){
+
+    // Adjust the velocity component
+    double first_adjustment = sigma*(brownian_area + 2.0*brownian_skew_area);
+    pair<double, double> y = make_pair(qp.first, qp.second + first_adjustment);
+
+    // Propagate the numerical solution along the linear path
+    y = linear_ode_step(y, brownian_increment, 2);
+
+    // Adjust the position and velocity components
+    double second_adjustment = two_sigma_step_size*brownian_skew_area;
+
+    return make_pair(y.first - second_adjustment, \
+                     y.second - first_adjustment + nu*second_adjustment);
+};
+
 int main()
 {
     // Input parameters
@@ -177,14 +201,14 @@ int main()
     const double beta = 3.0;
     const pair<double, double> y0 = make_pair(0.0, 0.0);
     const double T = 10.0;
-    const int no_of_steps = 1000;
+    const int no_of_steps = 500;
 
     // Number of steps used by the "fine" approximation
     // during each step of the "crude" numerical method
-    const int no_of_fine_steps = 50;
+    const int no_of_fine_steps = 100;
 
     // Number of paths used for the Monte Carlo estimators
-    const int no_of_paths = 100000;
+    const int no_of_paths = 250000;
 
     // Variances for generating the normal random variables
     const double third = 1.0/3.0;
@@ -257,7 +281,7 @@ int main()
                 fine_brownian_skew_area = fine_skew_area_distribution(generator);
 
                 // Propagate the numerical solution over the fine increment
-                y_fine = fine_method.zigzag_ode_step(y_fine, fine_brownian_increment,
+                y_fine = fine_method.adjusted_ode_step(y_fine, fine_brownian_increment,
                                                      fine_brownian_area, fine_brownian_skew_area);
 
                 // Update the information about the Brownian path over the
@@ -289,7 +313,7 @@ int main()
                                   - brownian_skew_area*one_over_step_size_squared;
 
             // Propagate the numerical solution over the course increment
-            y_ODE = course_method.zigzag_ode_step(y_ODE, brownian_increment,
+            y_ODE = course_method.adjusted_ode_step(y_ODE, brownian_increment,
                                                   brownian_area, brownian_skew_area);
 
             // Store the sample path if we have reached the final iteration
