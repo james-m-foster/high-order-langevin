@@ -19,7 +19,7 @@ class ULangevinMethods {
         double ode_vect_field(double, double, double, double, double);
         pair<double, double> linear_ode_step(pair<double, double>, double, int);
         pair<double, double> piecewise_ode_step(pair<double, double>, double, double, double);
-        pair<double, double> adjusted_ode_step(pair<double, double>, double, double, double);
+        pair<double, double> shifted_ode_step(pair<double, double>, double, double, double);
 
     private:
         // High order piecewise linear path coefficients
@@ -44,9 +44,8 @@ class ULangevinMethods {
         const double d3 = -0.354454490;
 
         // Precomputed values that depend on the input parameters
-        double sigma, quarter_nu_squared, half_nu;
+        double sigma, quarter_nu_squared, half_nu, six_sigma;
         double step_size;
-        double two_sigma_step_size;
 
         // Precomputed values that depend on step_size
         double step_sizes[3];
@@ -73,9 +72,8 @@ ULangevinMethods::ULangevinMethods(double input_nu, double input_beta,
     sigma = sqrt(2.0*input_nu/input_beta);
     quarter_nu_squared = 0.25*pow(input_nu, 2);
     half_nu = 0.5*input_nu;
-
+    six_sigma = 6.0*sigma;
     step_size =  input_T/(double)input_no_of_steps;
-    two_sigma_step_size = 2.0*sigma*step_size;
 
     // The "change of variable" parameters
     step_sizes[0] = a*step_size;
@@ -148,7 +146,7 @@ pair<double, double> ULangevinMethods::linear_ode_step(pair<double, double> qp,
     return make_pair(y, y_prime);
 };
 
-// Method for propagating the numerical solution via the piecewise linear-ODE method
+// Method for propagating the numerical solution via the piecewise linear ODE method
 pair<double, double> ULangevinMethods::piecewise_ode_step(pair<double, double>  qp,
                                                        double brownian_increment,
                                                        double brownian_area,
@@ -174,24 +172,23 @@ pair<double, double> ULangevinMethods::piecewise_ode_step(pair<double, double>  
     return y;
 };
 
-// Method for propagating the numerical solution via the adjusted linear-ODE method
-pair<double, double> ULangevinMethods::adjusted_ode_step(pair<double, double>  qp,
+// Method for propagating the numerical solution via the shifted ODE method
+pair<double, double> ULangevinMethods::shifted_ode_step(pair<double, double>  qp,
                                                        double brownian_increment,
                                                        double brownian_area,
                                                        double brownian_skew_area){
 
     // Adjust the velocity component
-    double first_adjustment = sigma*(brownian_area + 2.0*brownian_skew_area);
-    pair<double, double> y = make_pair(qp.first, qp.second + first_adjustment);
+    double sigma_area = sigma*brownian_area;
+    double six_sigma_skew_area = six_sigma*brownian_skew_area;
+
+    pair<double, double> y = make_pair(qp.first, qp.second + sigma_area + six_sigma_skew_area);
 
     // Propagate the numerical solution along the linear path
-    y = linear_ode_step(y, brownian_increment, 2);
+    y = linear_ode_step(y, brownian_increment - 12.0*brownian_skew_area, 2);
 
-    // Adjust the position and velocity components
-    double second_adjustment = two_sigma_step_size*brownian_skew_area;
-
-    return make_pair(y.first - second_adjustment, \
-                     y.second - first_adjustment + nu*second_adjustment);
+    // Adjust the velocity component
+    return make_pair(y.first, y.second - sigma_area + six_sigma_skew_area);
 };
 
 int main()
@@ -281,7 +278,7 @@ int main()
                 fine_brownian_skew_area = fine_skew_area_distribution(generator);
 
                 // Propagate the numerical solution over the fine increment
-                y_fine = fine_method.adjusted_ode_step(y_fine, fine_brownian_increment,
+                y_fine = fine_method.shifted_ode_step(y_fine, fine_brownian_increment,
                                                      fine_brownian_area, fine_brownian_skew_area);
 
                 // Update the information about the Brownian path over the
@@ -313,7 +310,7 @@ int main()
                                   - brownian_skew_area*one_over_step_size_squared;
 
             // Propagate the numerical solution over the course increment
-            y_ODE = course_method.adjusted_ode_step(y_ODE, brownian_increment,
+            y_ODE = course_method.shifted_ode_step(y_ODE, brownian_increment,
                                                   brownian_area, brownian_skew_area);
 
             // Store the sample path if we have reached the final iteration
