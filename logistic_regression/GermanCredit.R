@@ -24,11 +24,6 @@ identity_matrix <- diag(1, dimension, dimension)
 zero_vec <- matrix(0, nrow = dimension, ncol = 1)
 logistic_setting <- logisticregression_precomputation(Y, X, zero_vec, sigma_prior)
 
-# ULD parameters
-gamma <- 2
-u <- 1
-sigma <- sqrt(2*gamma*u)
-
 # Log sigmoid function
 stable_log_sigmoid <- function(x){
   output <- vector(mode = "logical", length = length(x))
