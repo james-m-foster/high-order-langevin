@@ -24,18 +24,28 @@ small_stepsize_halfed <- 0.5 * small_stepsize
 
 # Precomputed constants
 third <- 1/3
+sixth <- 1/6
+two_thirds <- 2/3
 
-splitting_const <- ((2 ** third) - 1)/(2*(2 - (2 ** third)))
+exp_1_s <- exp(-0.5*gamma*small_stepsize)
+exp_2_s <- exp(-gamma*small_stepsize)
+exp_integral_1_s <- (1 - exp_1_s)/(gamma)
+exp_integral_2_s <- (1 - exp_2_s)/(gamma)
+exp_integral_3_s <- (exp_1_s + 0.5*gamma*small_stepsize - 1)/(gamma ** 2)
+exp_integral_4_s <- (exp_1_s + 0.5*gamma*small_stepsize - 1)/(small_stepsize * (gamma ** 2))
+exp_integral_5_s <- (exp_2_s + gamma*small_stepsize - 1)/(gamma ** 2)
+exp_integral_6_s <- (exp_2_s + gamma*small_stepsize - 1)/(small_stepsize * (gamma ** 2))
+exp_integral_7_s <- (1 - exp_2_s)/(small_stepsize*gamma)
 
-exp_1_s <- exp(-gamma*(0.5 + splitting_const)*small_stepsize)
-exp_2_s <- exp(gamma*splitting_const*small_stepsize)
-exp_integral_1_s <- (1 - exp_1_s)/(gamma*small_stepsize)
-exp_integral_2_s <- (1 - exp_2_s)/(gamma*small_stepsize)
-
-exp_1_b <- exp(-gamma*(0.5 + splitting_const)*big_stepsize)
-exp_2_b <- exp(gamma*splitting_const*big_stepsize)
-exp_integral_1_b <- (1 - exp_1_b)/(gamma*big_stepsize)
-exp_integral_2_b <- (1 - exp_2_b)/(gamma*big_stepsize)
+exp_1_b <- exp(-0.5*gamma*big_stepsize)
+exp_2_b <- exp(-gamma*big_stepsize)
+exp_integral_1_b <- (1 - exp_1_b)/(gamma)
+exp_integral_2_b <- (1 - exp_2_b)/(gamma)
+exp_integral_3_b <- (exp_1_b + 0.5*gamma*big_stepsize - 1)/(gamma ** 2)
+exp_integral_4_b <- (exp_1_b + 0.5*gamma*big_stepsize - 1)/(big_stepsize * (gamma ** 2))
+exp_integral_5_b <- (exp_2_b + gamma*big_stepsize - 1)/(gamma ** 2)
+exp_integral_6_b <- (exp_2_b + gamma*big_stepsize - 1)/(big_stepsize * (gamma ** 2))
+exp_integral_7_b <- (1 - exp_2_b)/(big_stepsize*gamma)
 
 # Matrices
 W_small_var <- diag(small_stepsize, dimension, dimension)
@@ -55,58 +65,61 @@ chain_init <- function() {
   return(list(small_step_chain = chain, big_step_chain = chain))
 }
 
-# Small step of the SOFA method
-SOFA_small_step <- function(chain_state, W_small_increment, H_small_increment, K_small_increment) {
+# Small step of the SORT method
+SORT_small_step <- function(chain_state, W_small_increment, H_small_increment, K_small_increment) {
   x0 <- chain_state$position
   v0 <- chain_state$momentum + sigma*(H_small_increment + 6*K_small_increment)
   
-  gradposition <- chain_state$gradposition
+  gradposition1 <- chain_state$gradposition
   
   diagonal_term <- sigma*(W_small_increment - 12*K_small_increment)
   
-  v1 <- exp_1_s*v0 + (u * small_stepsize * gradposition + diagonal_term)*exp_integral_1_s
-  x1 <- x0 + v1*(1+2*splitting_const)*small_stepsize
+  x1 <- x0 + exp_integral_1_s*v0 + exp_integral_3_s*u*gradposition1 + exp_integral_4_s*diagonal_term
   
-  v2 <- exp_2_s*v1 + (u * small_stepsize * gradlogtarget(x1) + diagonal_term)*exp_integral_2_s
-  x2 <- x1 - v2*(1+4*splitting_const)*small_stepsize
+  gradposition2 <- gradlogtarget(x1)
   
-  v3 <- exp_2_s*v2 + (u * small_stepsize * gradlogtarget(x2) + diagonal_term)*exp_integral_2_s
-  x3 <- x2 + v3*(1+2*splitting_const)*small_stepsize
+  x2 <- x0 + exp_integral_2_s*v0 + exp_integral_5_s*u*(third*gradposition1 + two_thirds*gradposition2)  +
+                                   exp_integral_6_s * diagonal_term
   
-  gradposition <- gradlogtarget(x3)
+  gradposition3 <- gradlogtarget(x2)
   
-  v4 <- exp_1_s*v3 + (u * small_stepsize * gradposition + diagonal_term)*exp_integral_1_s
-
-  return(list(position = x3,
-              momentum = v4 - sigma*(H_small_increment - 6*K_small_increment),
-              gradposition = gradposition))
+  v1 <- exp_2_s*v0 + u*(sixth*exp_2_s*gradposition1 + two_thirds*exp_1_s*gradposition2 +
+                        sixth*gradposition3) * small_stepsize +
+                        exp_integral_7_s * diagonal_term
+  
+ 
+  return(list(position = x2,
+              momentum = v1 - sigma*(H_small_increment - 6*K_small_increment),
+              gradposition = gradposition3))
 }
 
-# Big step of the SOFA method
-SOFA_big_step <- function(chain_state, W_big_increment, H_big_increment, K_big_increment) {
+# Big step of the SORT method
+SORT_big_step <- function(chain_state, W_big_increment, H_big_increment, K_big_increment) {
   x0 <- chain_state$position
   v0 <- chain_state$momentum + sigma*(H_big_increment + 6*K_big_increment)
   
-  gradposition <- chain_state$gradposition
+  gradposition1 <- chain_state$gradposition
   
   diagonal_term <- sigma*(W_big_increment - 12*K_big_increment)
   
-  v1 <- exp_1_b*v0 + (u * big_stepsize * gradposition + diagonal_term)*exp_integral_1_b
-  x1 <- x0 + v1*(1+2*splitting_const)*big_stepsize
+  x1 <- x0 + exp_integral_1_b*v0 + exp_integral_3_b*u*gradposition1 + exp_integral_4_b*diagonal_term
   
-  v2 <- exp_2_b*v1 + (u * big_stepsize * gradlogtarget(x1) + diagonal_term)*exp_integral_2_b
-  x2 <- x1 - v2*(1+4*splitting_const)*big_stepsize
+  gradposition2 <- gradlogtarget(x1)
   
-  v3 <- exp_2_b*v2 + (u * big_stepsize * gradlogtarget(x2) + diagonal_term)*exp_integral_2_b
-  x3 <- x2 + v3*(1+2*splitting_const)*big_stepsize
+  x2 <- x0 + exp_integral_2_b*v0 + exp_integral_5_b*u*(third*gradposition1 + two_thirds*gradposition2)  +
+                                   exp_integral_6_b * diagonal_term
   
-  gradposition <- gradlogtarget(x3)
+  gradposition3 <- gradlogtarget(x2)
   
-  v4 <- exp_1_b*v3 + (u * big_stepsize * gradposition + diagonal_term)*exp_integral_1_b
+  v1 <- exp_2_b*v0 + u*(sixth*exp_2_b*gradposition1 + two_thirds*exp_1_b*gradposition2 +
+                        sixth*gradposition3) * big_stepsize +
+                        exp_integral_7_b * diagonal_term
   
-  return(list(position = x3,
-              momentum = v4 - sigma*(H_big_increment - 6*K_big_increment),
-              gradposition = gradposition))
+  
+  return(list(position = x2,
+              momentum = v1 - sigma*(H_big_increment - 6*K_big_increment),
+              gradposition = gradposition3))
+  
 }
 
 # Kernel for coupled ULD chain
@@ -126,7 +139,7 @@ coupled_kernel <- function(chains) {
     K_small_increment <- t(fast_rmvnorm(1, mean = zero_vec, covariance = K_small_var))
 
     
-    small_step_chain <-SOFA_small_step(small_step_chain, W_small_increment, H_small_increment, K_small_increment)
+    small_step_chain <- SORT_small_step(small_step_chain, W_small_increment, H_small_increment, K_small_increment)
     
     
     K_big_increment <- K_big_increment + small_stepsize_squared *
@@ -148,7 +161,7 @@ coupled_kernel <- function(chains) {
   K_big_increment <- third*W_big_increment + 0.5*H_big_increment -
                       K_big_increment/big_stepsize_squared
   
-  big_step_chain <- SOFA_big_step(big_step_chain, W_big_increment, H_big_increment, K_big_increment)
+  big_step_chain <- SORT_big_step(big_step_chain, W_big_increment, H_big_increment, K_big_increment)
   
   return(list(small_step_chain = small_step_chain,
               big_step_chain = big_step_chain))
@@ -158,6 +171,7 @@ coupled_kernel <- function(chains) {
 nsamples <- 100
 end_time <- 1000
 no_of_steps <- end_time / big_stepsize
+
 error <- 0
 
 for (i in 1:nsamples) {
